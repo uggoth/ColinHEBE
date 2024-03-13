@@ -5,7 +5,7 @@ class ColinData():
         self.params =  {'PI_NAME':'HEBE',
                         'ThisPi':'HEBE_V05',
                         'PICO_NAME':'PICOA',
-                        'ColObjects':'ColObjects_Pi_V16',
+                        'ColObjects':'ColObjects_Pi_V17',
                         'CommandStream':'CommandStreamPi_v06',
                         'GPIO':'GPIO_Pi_v47',
                         'AX12Servo':'AX12Servo_Pi_V01',
