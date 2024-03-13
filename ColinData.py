@@ -3,11 +3,11 @@ module_name = 'ColinData.py'
 class ColinData():
     def __init__(self):
         self.params =  {'PI_NAME':'HEBE',
-                        'ThisPi':'HEBE_V03',
+                        'ThisPi':'HEBE_V05',
                         'PICO_NAME':'PICOA',
                         'ColObjects':'ColObjects_Pi_V16',
                         'CommandStream':'CommandStreamPi_v06',
-                        'GPIO':'GPIO_Pi_v46',
+                        'GPIO':'GPIO_Pi_v47',
                         'AX12Servo':'AX12Servo_Pi_V01',
                         #  To obtain the AX12 port name use:    ls /dev/serial/by-id
                         'AX12_PATH':'/dev/ttyUSB0',
