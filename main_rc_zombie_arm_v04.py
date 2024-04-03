@@ -1,12 +1,17 @@
-module_name = 'main_rc_zombie_arm_v03'
+module_prefix = 'main_rc_zombie_arm'
+module_version = '04'
+module_name = module_prefix + '_v' + module_version + '.py'
 print (module_name, 'starting')
 
-print ('Expects  main_rc_with_arm or main_a_s_a_d  to be running on the Pico')
-print ('Needs DIP switches 5 and 6 UP')
+print ('Expects  main_a_s_a_d  to be running on the Pico')
+print ('Needs DIP switches 5 and 6 UP for Pico to respond')
+print ('Needs Radio  ON !!!!!')
 from importlib.machinery import SourceFileLoader
 data_module = SourceFileLoader('Colin', '/home/pi/ColinThisPi/ColinData.py').load_module()
 data_object = data_module.ColinData()
 data_values = data_object.params
+GPIO_version = data_values['GPIO']
+GPIO = SourceFileLoader('GPIO', '/home/pi/ColinPiClasses/' + GPIO_version + '.py').load_module()
 ThisPiVersion = data_values['ThisPi']
 ThisPi = SourceFileLoader('ThisPi', '/home/pi/ColinThisPi/' + ThisPiVersion + '.py').load_module()
 CommandStream = ThisPi.CommandStream
@@ -24,6 +29,14 @@ if my_pico.name != pico_name:
     print ('**** Expected Pico:', pico_name, 'Got:', my_pico.name,'****')
 else:
     print ('Connected to Pico OK')
+
+relay_pin_no = 21
+gpio.set_mode(relay_pin_no, pigpio.OUTPUT)
+my_stepper = GPIO.L298NStepperShort('Test Stepper', gpio, 19, 8, 7, 12)
+my_stepper.float()
+step_ons = 25
+pause_microseconds = 2000
+
 zombie_arm = ThisPi.ZombieArm()
 
 base_servo = zombie_arm.base_servo
@@ -48,7 +61,7 @@ wrist_interpolator = ColObjects.Interpolator('Wrist Servo Interpolator',
                                             [100,      0,        -100])
 
 loops = 100
-no_joysticks = 6
+no_joysticks = 8
 joysticks = [0] * no_joysticks
 number_length = 4
 delay = 0.1
@@ -58,8 +71,10 @@ print_interval = 1000
 i = 0
 exiting = False
 finished = False
+old_switch_state = 'OFF'
 
 print ('Main Loop')
+first_time = True
 
 while not finished:
     i += 1
@@ -78,7 +93,7 @@ while not finished:
             if feedback == 'EXIT':
                 exiting = True
                 continue
-            elif feedback == 'OKOK':            
+            elif feedback == 'OKOK':
                 for j in range(no_joysticks):
                     start = number_length * j
                     end = start + number_length
@@ -87,12 +102,37 @@ while not finished:
                     joysticks[j] = int(jvalue)
                 if i % print_interval == 0:
                     print (joysticks)
+                if first_time:
+                    first_time = False
+                    if ((joysticks[6] == 1) and (joysticks[7] == 1)):
+                        print ('DIPS OK')
+                        continue
+                    else:
+                        print ('DIPS 5 and 6 not set. Looks like Pico is not ready. Closing down')
+                        exiting = True
+                        continue
                 knob_value = joysticks[5]
-                #  TEMPORARY   ########################
-                #base_target = knob_value
-                base_target = 30
-                #print ('base_target', base_target)
+                base_target = knob_value
+                #base_target = 30  #  FOR ECO-DISASTER
                 base_servo.move_to(base_target, servo_speed)
+                switch_value = joysticks[4]
+                if switch_value < -10:
+                    switch_state = 'FIRE'
+                elif switch_value > 10:
+                    switch_state = 'OFF'
+                else:
+                    switch_state = 'SPIN'
+                if switch_state != old_switch_state:
+                    old_switch_state = switch_state
+                    if switch_state == 'FIRE':
+                        for i in range(step_ons):
+                            my_stepper.step_on('ANTI', pause_microseconds)
+                        my_stepper.float()
+                    elif switch_state == 'SPIN':
+                        gpio.write(relay_pin_no,1)
+                    else:
+                        gpio.write(relay_pin_no,0)
+                    print ('switch', switch_state)
                 js4_value = joysticks[2]
                 if js4_value > 25:
                     wrist_target = 72
