@@ -1,5 +1,5 @@
 module_prefix = 'main_escape_route'
-module_version = '08'
+module_version = '09'
 module_name = module_prefix + '_v' + module_version + '.py'
 print (module_name, 'starting')
 print ('expects main_autonomous to be running on the Pico')
@@ -25,6 +25,9 @@ handshake = CommandStream.Handshake('picoa', 4, gpio)
 from vl53l5cx.vl53l5cx import VL53L5CX
 pico_id = 'PICOA'
 my_pico = CommandStream.Pico(pico_id, gpio, handshake)
+if not my_pico.valid:
+    print ('**** NO PICO ****')
+    sys.exit(1)
 pwren = 17
 gpio.set_mode(pwren, pigpio.OUTPUT)
 gpio.write(pwren,1)
@@ -37,7 +40,7 @@ my_front_ultrasonic = my_ultrasonics.front_ultrasonic.instance
 from datetime import datetime
 now = datetime.now()
 date_time = now.strftime("%m/%d/%Y, %H:%M:%S")
-my_pico.send_command('0000', 'LOGD'+date_time)
+#my_pico.send_command('0000', 'LOGD'+date_time)
 alive = driver.is_alive()
 if not alive:
     raise IOError("VL53L5CX Device is not alive")
@@ -73,7 +76,7 @@ def straighten_up():
                 print ('Straight')
                 success = True
                 break
-            if left < right:
+            if left_count < right_count:
                 command = 'TRNL0030'
                 left_count += 1
             else:
@@ -82,13 +85,19 @@ def straighten_up():
             my_pico.send_command('0000', command)
         else:
             print ('No diff')
+    if left_count > right_count:
+        direction = 'LEFT'
+    elif right_count > left_count:
+        direction = 'RIGHT'
+    else:
+        direction = 'NONE'
     return success, direction, left_count, right_count
 
-print("Initialising...")
+print("Initialising vl53l5cx ...")
 t = time.time()
 driver.init()
 for i in range(9):
-    mmus = my_front_ultrasonic.read_mms()
+    front_mms = my_front_ultrasonic.read_mms()
     time.sleep(0.2)
 print(f"Initialised ({time.time() - t:.1f}s)")
 print ('Now waiting for blue button')
@@ -100,13 +109,14 @@ i = 0
 while i < blue_button_wait_loops:
     time.sleep(interval)
     if gpio.read(blue_button) == 0:
+        print ('Blue button pressed')
         break
-    if i%flash_loops == 0:
-        flip_flop = not flip_flop
-        if flip_flop:
-            my_pico.send_command('0000', 'RLC+')
-        else:
-            my_pico.send_command('0000', 'RLC-')
+#    if i%flash_loops == 0:
+#        flip_flop = not flip_flop
+#        if flip_flop:
+#            my_pico.send_command('0000', 'HREV')
+#        else:
+#            my_pico.send_command('0000', 'FSTP')
     i += 1
             
 if i >= blue_button_wait_loops:
@@ -114,6 +124,7 @@ if i >= blue_button_wait_loops:
     sys.exit(1)
 wait_time = int(i * interval)
 print ('Blue button pressed after', wait_time, 'seconds . Starting ...')
+time.sleep(1)
 driver.set_resolution(4*4)
 driver.set_ranging_frequency_hz(40)
 # Ranging:
@@ -131,16 +142,18 @@ max_not_ready = 100
 max_bad_status = 100
 no_zones = 16
 interval = 300  #  milliseconds
-legs = ['TRNR','TRNR','TRNL','TRNL','TRNR','STOP']
+legs = ['TRNR' ,'TRNR'] # ,'TRNL','TRNL','TRNR','STOP']
 leg = 0
 not_ready = 0
 bad_status = 0
+print ('Actioning leg',legs[leg])
 for i in range(maze_action_loops):
     time.sleep(interval / 1000.0)
     if gpio.read(blue_button) == 0:
+        print ('**** BLUE BUTTON PRESSED ****')
         break
     serial_no = '{:04}'.format(i+1)
-    mmus = my_front_ultrasonic.read_mms()
+    front_mms = my_front_ultrasonic.read_mms()
     if not driver.check_data_ready():
         not_ready += 1
         if not_ready > max_not_ready:
@@ -163,9 +176,9 @@ for i in range(maze_action_loops):
         mm11 = int(ranging_data.distance_mm[driver.nb_target_per_zone * 11])
         mm07 = int(ranging_data.distance_mm[driver.nb_target_per_zone * 7])
         mm03 = int(ranging_data.distance_mm[driver.nb_target_per_zone * 3])
-        print ('mm15:{:4}  mm11:{:4}  mm07:{:4}  mm03:{:4}  mmus{:4}  '.format(mm15,mm11,mm07,mm03,mmus))
+        print ('mm15:{:4}  mm11:{:4}  mm07:{:4}  mm03:{:4}  front_mms{:4}  '.format(mm15,mm11,mm07,mm03,front_mms))
 
-        if mmus < 195 or mm03 > 300:  ###### Leg End ################
+        if front_mms < 335 or mm03 > 300:  ###### Leg End ################
             action = legs[leg]
             print ('************ LEG', leg+1, action, '***********')
             if action == 'TRNR':
@@ -174,11 +187,11 @@ for i in range(maze_action_loops):
             elif action == 'TRNL':
                 my_pico.send_command(serial_no, 'STOP')
                 time.sleep(0.1)
-                my_pico.send_command(serial_no, 'DRIV   0  40')
+                my_pico.send_command(serial_no, 'DRIV   0  40   0')
                 time.sleep(0.4)
                 my_pico.send_command_and_wait(serial_no, 'TRNL 450')
                 time.sleep(0.3)
-                my_pico.send_command(serial_no, 'DRIV   0  40')
+                my_pico.send_command(serial_no, 'DRIV   0  40   0')
                 time.sleep(0.7)
                 straighten_up()
                 my_pico.send_command(serial_no, 'STOP')
@@ -192,6 +205,7 @@ for i in range(maze_action_loops):
             if leg >= len(legs):
                 break
             else:
+                print ('Actioning leg',legs[leg])
                 continue
 
         avg_offset = (mm15 + mm11 + mm07 + mm03) / 4
@@ -225,7 +239,8 @@ for i in range(maze_action_loops):
 
         steering = steering_calc[steering_info]
         throttle = 40
-        command = 'DRIV{:04}{:04}'.format(steering, throttle)
+        crab = 0
+        command = 'DRIV{:04}{:04}{:04}'.format(steering, throttle, crab)
         print (serial_no, offset, angle, command)
         print (my_pico.send_command(serial_no, command), '\n')
        
